@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVERB - Speed & Reverb FX</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* --- Global & Base Styles (Inspired by Dark Plugin Aesthetic) --- */
+        :root {
+            --plugin-bg: #282828;
+            --control-bg: #1e1e1e;
+            --font-color: #e0e0e0;
+            --highlight-yellow: #ffcc00;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 10vh;
+            padding: 20px;
+            color: var(--font-color);
+        }
+
+        .plugin-body {
+            background: var(--plugin-bg);
+            border: 1px solid #333;
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.9), inset 0 0 10px rgba(255, 255, 255, 0.05);
+            box-sizing: border-box; /* ensure padding is included in width calculations */
+            overflow: hidden; /* prevent visual overflow from children */
+        }
+
+        .panel {
+            background-color: var(--control-bg);
+            border: 1px solid #333;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.6);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        /* --- Load Button (Glowing) --- */
+        .file-input-label {
+            display: block;
+            background-color: transparent;
+            color: var(--highlight-yellow);
+            padding: 8px 15px;
+            border: 1px solid var(--highlight-yellow);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(255, 204, 0, 0.5);
+            box-sizing: border-box; /* include padding in width so truncation works consistently */
+        }
+
+        .file-input-label:hover {
+            background-color: rgba(255, 204, 0, 0.1);
+            box-shadow: 0 0 15px rgba(255, 204, 0, 0.8);
+        }
+
+        /* --- Knob Styling (Dynamic Arc Indicators) --- */
+
+        .knob-wrapper {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* The dynamic illuminated arc (indicator) */
+        .knob-indicator {
+            position: absolute;
+            border-radius: 50%;
+            /* Mask cuts out the center, leaving only the ring visible */
+            -webkit-mask: radial-gradient(transparent 50%, black 51%);
+            mask: radial-gradient(transparent 50%, black 51%);
+            background: conic-gradient(transparent 0deg, transparent 306deg, transparent 306deg);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+            transition: background 0.1s linear;
+        }
+
+        .knob-indicator.speed {
+            width: 160px;
+            height: 160px;
+            --knob-arc-gradient: conic-gradient(
+                from -153deg at 50% 50%, 
+                #ff4500 0deg, 
+                #ff9900 60deg, 
+                #ffcc00 120deg, 
+                #00ff00 240deg, 
+                #00ff00 306deg
+            );
+        }
+        
+        .knob-indicator.reverb {
+            width: 90px;
+            height: 90px;
+            --knob-arc-gradient: conic-gradient(
+                from -153deg at 50% 50%, 
+                #7D26CD 0deg, 
+                #5D80E5 100deg, 
+                #00CCFF 200deg, 
+                #55C48A 306deg
+            );
+        }
+        
+        .knob-indicator.gain {
+            width: 90px;
+            height: 90px;
+            --knob-arc-gradient: conic-gradient(
+                from -153deg at 50% 50%, 
+                #00CC99 0deg, 
+                #10b981 153deg, 
+                #34d399 306deg
+            );
+        }
+
+        /* The actual knob body (metallic look, image placeholder) */
+        .knob-body {
+            position: relative;
+            border-radius: 50%;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6), inset 0 2px 5px rgba(255, 255, 255, 0.2);
+            cursor: grab;
+            background: linear-gradient(145deg, #444 0%, #777 40%, #555 100%);
+            /* The rotation is controlled dynamically by JS */
+            transition: transform 0.05s linear;
+        }
+
+        .knob-body.speed {
+            width: 120px;
+            height: 120px;
+        }
+        
+        .knob-body.reverb, .knob-body.gain {
+            width: 60px;
+            height: 60px;
+        }
+
+        /* Central marker/indicator line */
+        .knob-marker {
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            width: 4px;
+            background-color: #ff0000; 
+            border-radius: 2px;
+            transform: translateX(-50%);
+        }
+
+        .knob-body.speed .knob-marker { height: 20px; background-color: #000; }
+        .knob-body.reverb .knob-marker, .knob-body.gain .knob-marker { height: 10px; background-color: #000; }
+
+        /* --- Toggle Switch Styling --- */
+        .toggle-switch { width: 50px; height: 25px; position: relative; }
+        .toggle-switch input { display: none; }
+        
+        .toggle-switch label {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #444;
+            border-radius: 12.5px;
+            position: absolute;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+        }
+
+        .toggle-switch input:checked + label {
+            background-color: #5D80E5; /* Blue glow color for Reverb */
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6), 0 0 15px rgba(93, 128, 229, 0.6);
+        }
+
+        /* --- 432Hz Button/Light Style (Custom) --- */
+        .hz-button {
+            width: 60px; /* Adjusted size */
+            height: 60px; /* Adjusted size */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            border: 2px solid #555;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 5px 15px rgba(0, 0, 0, 0.5);
+            background-color: #333;
+            transition: all 0.15s;
+            position: relative;
+        }
+
+        .hz-button-light {
+            width: 40px; /* Adjusted size */
+            height: 40px; /* Adjusted size */
+            border-radius: 50%;
+            background-color: #550000; /* Off state: Dark Red (default for 432Hz) */
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.9);
+            transition: background-color 0.3s, box-shadow 0.3s;
+            /* Centering the light */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .hz-button.active .hz-button-light {
+            background-color: #ff0000; /* On state: Bright Red (for 432Hz) */
+            box-shadow: 0 0 15px #ff0000, inset 0 0 10px #ff7777;
+        }
+        
+        /* --- General Controls --- */
+        .control-button {
+            background-color: #4a4a4a;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 0 #2c2c2c;
+            transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+        }
+        
+        /* Custom style for the active loop button */
+        .control-button.loop-active {
+            background-color: var(--highlight-yellow) !important;
+            color: #111 !important;
+            box-shadow: 0 4px 0 #ccaa00 !important;
+        }
+        
+        /* Export Button Specific Styling */
+        #exportButton {
+            background-color: #5D80E5;
+            box-shadow: 0 4px 0 #3a4b89;
+        }
+        #exportButton:hover:not(:disabled) {
+            background-color: #6e92f2;
+        }
+
+
+        .control-button:hover:not(:disabled) {
+            background-color: #5c5c5c;
+        }
+
+        .control-button:active:not(:disabled) {
+            box-shadow: 0 0 0 #2c2c2c;
+            transform: translateY(4px);
+        }
+
+        /* Message Box */
+        #message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1f2937;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            display: none;
+            max-width: 80%;
+            text-align: center;
+        }
+
+        .status-text {
+            padding: 1px 3px;
+        }
+        
+        /* Custom style for editable value span */
+        .value-span {
+            cursor: pointer;
+            user-select: none; /* Prevent selection when not editing */
+        }
+        
+        .value-span[contenteditable="true"] {
+            background-color: var(--highlight-yellow);
+            color: var(--plugin-bg);
+            padding: 1px 3px;
+            border-radius: 4px;
+            cursor: text;
+            user-select: text;
+            font-family: monospace; /* Easier to read numbers */
+            outline: none; /* Remove default blue focus border */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Message Box (Instead of alert()) -->
+    <div id="message-box" class="space-y-4">
+        <h3 class="text-xl font-bold">Heads Up!</h3>
+        <p id="message-content"></p>
+        <button onclick="closeMessageBox()" class="control-button bg-blue-600 hover:bg-blue-700">OK</button>
+    </div>
+
+    <!-- The SVERB Plugin Container -->
+    <div class="flex h-screen justify-center items-center">
+        <div class="plugin-body h-fit w-[550px] max-w-[550px] min-w-[550px] p-4 md:p-6 rounded-xl space-y-10 flex-items-center justify-center">
+            <h1 class="text-3xl font-bold text-center tracking-widest text-white mt-2">SVERB</h1>
+            <p class="text-center text-sm text-gray-400 -mt-4 mb-6">Speed & Reverb Audio Effect</p>
+    
+            <!-- Top Control Bar + Status (Status placed inside same bordered section) -->
+            <div class="p-2 rounded-lg w-full min-w-0 overflow-hidden border-b border-white/10">
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6">
+                    <div class="w-48 min-w-0 flex-shrink-0"> <!-- w-48 = 192px -->
+                        <input type="file" id="audioFile" accept="audio/*" class="hidden" onchange="loadAudio(event)">
+                        <label for="audioFile" class="file-input-label text-center w-48 block overflow-hidden min-w-0 flex-shrink-0">
+                            <span id="loadText" class="block w-36 truncate align-middle min-w-0">Load Audio File</span>
+                        </label>
+                    </div>
+                    <div class="flex space-x-4 min-w-0">
+                        <!-- Loop Button -->
+                        <button id="loopButton" onclick="toggleLoop()" class="control-button bg-gray-600 hover:bg-gray-700 disabled:opacity-50" title="Toggle Audio Loop" disabled>
+                            <!-- Loop Icon -->
+                            <svg id="loopIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+                        </button>
+                        <button id="playButton" onclick="togglePlay()" class="control-button bg-green-600 hover:bg-green-700 disabled:opacity-50" disabled>
+                            <!-- Play icon (Triangle) -->
+                            <svg id="playIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M6 4L16 10L6 16z"/></svg>
+                            <!-- Pause icon (Two Vertical Bars) -->
+                            <svg id="pauseIcon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg>
+                        </button>
+                        <button id="stopButton" onclick="stopPlayback()" class="control-button bg-red-600 hover:bg-red-700 disabled:opacity-50" disabled>
+                            <!-- Stop icon (Square) -->
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <!-- Inline Status (under the control bar) -->
+                <div id="topStatus" class="w-full text-center text-sm text-gray-400 pt-2px pb-2px flex items-center justify-center">
+                    <span class="mr-1">Status:</span>
+                    <span id="statusText" class="status-text text-yellow-400">Ready to load audio.</span>
+                </div>
+            </div>
+            
+            <!-- Main Controls (Knobs) -->
+            <div class="panel flex flex-col items-center justify-between space-y-12">
+                
+                <div class="grid grid-cols-3 items-center w-full gap-6">
+                        
+                    <!-- LEFT CONTROLS COLUMN (432Hz) -->
+                    <div class="flex flex-col items-center space-y-2">
+                        <div id="hz432Button" class="hz-button" onclick="toggle432Hz()">
+                            <div class="hz-button-light"></div>
+                        </div>
+                        <div class="h-4 flex items-center justify-center">
+                            <p id="hz432Status" class="text-xs mt-1 text-gray-400 w-[110px] text-center">432Hz</p>
+                        </div>
+                    </div>
+                      
+                    <!-- SPEED KNOB (Central) -->
+                    <div class="flex flex-col items-center">
+                        <!-- Label for Speed -->
+                        <label class="text-white text-lg tracking-widest mb-4">SPEED</label>
+                        
+                        <div id="speedKnobWrapper" class="knob-wrapper speed">
+                            <!-- Dynamic Glowing Indicator Arc -->
+                            <div id="speedIndicator" class="knob-indicator speed"></div>
+                            <!-- Knob Body -->
+                            <div id="speedKnob" class="knob-body speed" 
+                                data-min-value="0.5" 
+                                data-max-value="2.0" 
+                                data-initial-value="1.0" 
+                                data-normalized-position="0.5" 
+                                data-angle="0">
+                                <div class="knob-marker"></div>
+                            </div>
+                        </div>
+    
+                        <!-- FIX: Spacing adjustment for 0.5x and 2.0x labels -->
+                        <div class="mt-4 w-full flex justify-between text-xs font-semibold" style="width: 160px;">
+                            <span class="text-red-400">0.5x (SLOW)</span>
+                            <span class="text-green-400">2.0x (FAST)</span>
+                        </div>
+                        <!-- Fixed width for the dynamic span to prevent CLS -->
+                        <p class="text-center text-md font-bold mt-2 text-white">
+                            <span id="speedValue" class="value-span inline-block w-[60px] text-right" 
+                            data-knob-id="speedKnob" 
+                            data-type="rate"
+                            ondblclick="handleValueEditStart(this)">1.00x</span>
+                        </p>
+                    </div>
+    
+                    <!-- RIGHT CONTROLS COLUMN (Perfection Knob) -->
+                    <div class="flex flex-col items-center space-y-2">
+                        <div id="perfectionButton" class="hz-button" onclick="cyclePerfection()" title="Perfection Preset (Off / Slow / Fast)">
+                            <div id="perfectionLight" class="hz-button-light"></div>
+                        </div>
+                        <div class="h-4 flex items-center justify-center">
+                            <p id="perfectionStatus" class="text-xs mt-1 text-gray-400 w-[110px] text-center">Perfection: OFF</p>
+                        </div>
+                    </div>
+                </div>
+    
+                <!-- REVERB & GAIN Controls (Secondary) -->
+                <div class="w-full grid grid-cols-3 justify-items-center items-start pt-6 border-t border-white/10 gap-6">
+
+                    <!-- Reverb Toggle -->
+                    <div class="flex flex-col items-center space-y-2">
+                        <label class="text-white text-sm tracking-wider">REVERB ON</label>
+                        <!-- Use the same size container as knobs so the switch vertically centers with them -->
+                        <div class="knob-wrapper reverb flex items-center justify-center w-[60px] h-[60px]">
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="reverbToggle" checked onchange="toggleReverb()">
+                                <label for="reverbToggle"></label>
+                            </div>
+                        </div>
+                    </div>
+    
+                    <!-- WETNESS KNOB -->
+                    <div class="flex flex-col items-center space-y-2">
+                        <label class="text-white text-sm tracking-wider">WETNESS</label>
+                        
+                        <div id="reverbKnobWrapper" class="knob-wrapper reverb">
+                            <!-- Dynamic Glowing Indicator Arc -->
+                            <div id="reverbIndicator" class="knob-indicator reverb"></div>
+                            <!-- Knob Body -->
+                            <div id="reverbKnob" class="knob-body reverb" 
+                                 data-min-value="0" 
+                                 data-max-value="1" 
+                                 data-initial-value="0.5" 
+                                 data-normalized-position="0.5"
+                                 data-angle="0">
+                                <div class="knob-marker"></div>
+                            </div>
+                        </div>
+    
+                        <!-- Fixed width for the dynamic span to prevent CLS (accommodates "OFF" or "100%") -->
+                        <p class="text-center text-xs text-white">Mix: <span id="reverbValue" class="value-span inline-block w-[40px] text-right"
+                            data-knob-id="reverbKnob" 
+                            data-type="percent"
+                            ondblclick="handleValueEditStart(this)">50%</span></p>
+                    </div>
+    
+                    <!-- GAIN KNOB -->
+                    <div class="flex flex-col items-center space-y-2">
+                        <label class="text-white text-sm tracking-wider">GAIN</label>
+                        
+                        <div id="gainKnobWrapper" class="knob-wrapper gain">
+                            <!-- Dynamic Glowing Indicator Arc -->
+                            <div id="gainIndicator" class="knob-indicator gain"></div>
+                            <!-- Knob Body -->
+                            <div id="gainKnob" class="knob-body gain" 
+                                 data-min-value="-6" 
+                                 data-max-value="6" 
+                                 data-initial-value="0.0" 
+                                 data-normalized-position="0.5"
+                                 data-angle="0">
+                                <div class="knob-marker"></div>
+                            </div>
+                        </div>
+    
+                        <!-- Fixed width for the dynamic span to prevent CLS (accommodates "-inf" or "+6.0dB") -->
+                        <p class="text-center text-xs text-white">Level: <span id="gainValue" class="value-span inline-block w-[50px] text-right"
+                            data-knob-id="gainKnob" 
+                            data-type="linear"
+                            ondblclick="handleValueEditStart(this)">0dB</span></p>
+                    </div>
+                </div>
+    
+            </div>
+            
+            <!-- Export Button -->
+            <div class="pt-6 border-t border-white/10 flex justify-center">
+                <button id="exportButton" onclick="exportAudio()" class="control-button text-sm font-bold disabled:opacity-50" disabled>
+                    Export Processed Audio (WAV)
+                </button>
+            </div>
+            
+    
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // Global Web Audio Context and Nodes
+        let audioContext;
+        let sourceNode;
+        let masterGainNode; // Overall output volume
+        let gainNode; // Summing node for dry/wet signal
+        let convolverNode;
+        let wetGainNode;
+        let dryGainNode;
+        let audioBuffer;
+        let uploadedFileName = null; // store original uploaded filename for export naming
+        let isPlaying = false;
+        let startTime = 0;
+        let startOffset = 0;
+        let is432HzMode = false; // State for 432Hz mode
+        let isLooping = false; // State for audio looping
+        
+        // Configuration Constants
+        const MAX_SPEED = 2.0; 
+        const MIN_SPEED = 0.5;
+        const SPEED_CENTER = 1.0;
+        const SLOWDOWN_RANGE = SPEED_CENTER - MIN_SPEED; // 0.5
+        const SPEEDUP_RANGE = MAX_SPEED - SPEED_CENTER; // 1.0
+        
+        const INITIAL_WETNESS = 0.5;
+        // Gain is now expressed in dB. Default is 0.0 dB.
+        const INITIAL_GAIN = 0.0; // 0dB
+
+        // Maximum allowed upload size (150 MB)
+        const MAX_UPLOAD_BYTES = 150 * 1024 * 1024; // 150 MiB
+        // Maximum allowed decoded audio memory (1.5 GiB) - used to estimate in-memory Float32 buffer size
+        const MAX_DECODED_BYTES = 1.0 * 1024 * 1024 * 1024; // 1.0 GiB
+        
+        const MAX_ANGLE_RANGE = 306; // Total degrees of rotation (7:30 to 4:30)
+        const START_ANGLE = -153;    // Starting angle for 306 degree arc (relative to vertical)
+        
+        // Pitch shift ratio for A440 -> A432: 432/440
+        const PITCH_SHIFT_RATIO = 432 / 440; 
+
+        // --- Utility Functions ---
+
+        // Function to show custom message box
+        function showMessageBox(title, message) {
+            document.getElementById('message-content').innerHTML = message;
+            document.getElementById('message-box').style.display = 'block';
+            document.getElementById('message-box').querySelector('h3').textContent = title;
+        }
+
+        function closeMessageBox() {
+            document.getElementById('message-box').style.display = 'none';
+        }
+        
+        /**
+         * Calculates the playback rate value from a linear normalized position (0.0 to 1.0).
+         * @param {number} N - Normalized physical position (0.0 at min, 1.0 at max).
+         * @returns {number} The actual, non-linearly mapped playback rate (0.5 to 2.0).
+         */
+        function getSpeedValueFromNormalizedPosition(N) {
+            const clampedN = Math.min(1.0, Math.max(0.0, N));
+            
+            if (clampedN <= 0.5) {
+                // --- SLOWDOWN HALF (0.5x to 1.0x) ---
+                const N_Half = clampedN / 0.5;
+                const V_Decel = 1 - Math.sqrt(1 - N_Half); 
+                return MIN_SPEED + V_Decel * SLOWDOWN_RANGE; 
+            } else {
+                // --- SPEEDUP HALF (1.0x to 2.0x) ---
+                const N_Half = (clampedN - 0.5) / 0.5;
+                const V_Accel = Math.sqrt(N_Half); 
+                return SPEED_CENTER + V_Accel * SPEEDUP_RANGE;
+            }
+        }
+
+
+        // --- Web Audio Initialization ---
+
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // 1. Master Gain Node (Connects to Speakers)
+                masterGainNode = audioContext.createGain();
+                masterGainNode.connect(audioContext.destination);
+
+                // 2. Main Summing Gain Node (Dry + Wet signals sum here)
+                gainNode = audioContext.createGain();
+                gainNode.connect(masterGainNode); // Connect to master output
+
+                // 3. Reverb Components
+                convolverNode = audioContext.createConvolver();
+                wetGainNode = audioContext.createGain(); // For Reverb (Wet) Signal
+                dryGainNode = audioContext.createGain(); // For Dry Signal
+                
+                // Default Reverb Algorithm (Impulse Response)
+                createReverbImpulseResponse();
+
+                // Connect the graph: 
+                // source -> dryGainNode -> gainNode (summing)
+                // source -> convolverNode -> wetGainNode -> gainNode (summing)
+                wetGainNode.connect(gainNode);
+                convolverNode.connect(wetGainNode);
+                dryGainNode.connect(gainNode); // Ensure dry signal path is connected
+
+                // Set initial values: Pass the knob element
+                const reverbKnob = document.getElementById('reverbKnob');
+                const gainKnob = document.getElementById('gainKnob');
+                
+                setReverbWetness(INITIAL_WETNESS, reverbKnob);
+                setGain(INITIAL_GAIN, gainKnob);
+            }
+        }
+        
+        // Function to create a simple, synthetic impulse response for reverb
+        function createReverbImpulseResponse() {
+            const sampleRate = audioContext.sampleRate;
+            const duration = 1.35; // 1.35 seconds reverb time
+            const length = sampleRate * duration;
+            const impulse = audioContext.createBuffer(2, length, sampleRate);
+            const impulseL = impulse.getChannelData(0);
+            const impulseR = impulse.getChannelData(1);
+            
+            // Apply scaling factor to reduce excessive reverb volume
+            const scalingFactor = 0.65; 
+
+            // Create a decaying white noise burst for a simple plate/hall simulation
+            for (let i = 0; i < length; i++) {
+                const decay = Math.exp(-i / (sampleRate * 0.5));
+                impulseL[i] = (Math.random() * 2 - 1) * decay * scalingFactor;
+                impulseR[i] = (Math.random() * 2 - 1) * decay * 0.8 * scalingFactor;
+            }
+
+            convolverNode.buffer = impulse;
+        }
+
+        // --- File Loading and Decoding ---
+
+        function loadAudio(event) {
+            initAudioContext();
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Enforce upload limit
+            if (file.size > MAX_UPLOAD_BYTES) {
+                const maxMB = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
+                showMessageBox('File Too Large', `Please choose a file smaller than ${maxMB} MB.`);
+                // Reset input and status
+                event.target.value = '';
+                uploadedFileName = null;
+                document.getElementById('loadText').textContent = 'Load Audio File';
+                document.getElementById('statusText').textContent = 'Ready to load audio.';
+                return;
+            }
+
+            // Accept the filename for later export naming
+            uploadedFileName = file.name;
+
+            document.getElementById('loadText').textContent = file.name.substring(0, 20) + '...';
+            document.getElementById('statusText').textContent = 'Checking audio metadata...';
+
+            // Create a temporary audio element to read duration without decoding the whole file
+            const objectUrl = URL.createObjectURL(file);
+            const tempAudio = new Audio();
+            tempAudio.preload = 'metadata';
+            tempAudio.src = objectUrl;
+
+            const cleanUpTemp = () => {
+                try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+            };
+
+            const onMeta = async function() {
+                tempAudio.removeEventListener('loadedmetadata', onMeta);
+                tempAudio.removeEventListener('error', onErr);
+                const duration = isFinite(tempAudio.duration) && tempAudio.duration > 0 ? tempAudio.duration : 0;
+                cleanUpTemp();
+
+                // Estimate decoded memory (Float32 samples). Assume stereo (2 channels) as a safe default.
+                const sampleRate = audioContext.sampleRate || 44100;
+                const channels = 2;
+                const estimatedDecodedBytes = duration * sampleRate * channels * 4; // Float32 = 4 bytes/sample
+
+                if (estimatedDecodedBytes > MAX_DECODED_BYTES) {
+                    const estGiB = (estimatedDecodedBytes / (1024 * 1024 * 1024)).toFixed(2);
+                    const maxGiB = (MAX_DECODED_BYTES / (1024 * 1024 * 1024)).toFixed(1);
+                    showMessageBox('File Too Large', `Decoded audio would require approx ${estGiB} GiB memory which exceeds the allowed ${maxGiB} GiB. Please choose a shorter file or reduce size.`);
+                    event.target.value = '';
+                    uploadedFileName = null;
+                    document.getElementById('loadText').textContent = 'Load Audio File';
+                    document.getElementById('statusText').textContent = 'Ready to load audio.';
+                    return;
+                }
+
+                // Proceed to decode since estimate is within limits
+                document.getElementById('statusText').textContent = 'Decoding audio...';
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        audioBuffer = await audioContext.decodeAudioData(e.target.result);
+                        document.getElementById('statusText').textContent = 'Audio loaded and ready.';
+                        enableControls();
+                        stopPlayback();
+                    } catch (error) {
+                        console.error('Error decoding audio:', error);
+                        showMessageBox('Audio Error', 'Could not decode the audio file. Please ensure it is a valid MP3 or WAV file.');
+                        document.getElementById('statusText').textContent = 'Ready to load audio.';
+                        document.getElementById('loadText').textContent = 'Load Audio File';
+                        audioBuffer = null;
+                        uploadedFileName = null;
+                        disableControls();
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+            const onErr = function() {
+                tempAudio.removeEventListener('loadedmetadata', onMeta);
+                tempAudio.removeEventListener('error', onErr);
+                cleanUpTemp();
+                showMessageBox('Metadata Error', 'Could not read audio metadata to estimate size. Loading has been cancelled for safety.');
+                event.target.value = '';
+                document.getElementById('loadText').textContent = 'Load Audio File';
+                document.getElementById('statusText').textContent = 'Ready to load audio.';
+            };
+
+            tempAudio.addEventListener('loadedmetadata', onMeta);
+            tempAudio.addEventListener('error', onErr);
+        }
+
+        function enableControls() {
+            document.getElementById('playButton').disabled = false;
+            document.getElementById('stopButton').disabled = false;
+            document.getElementById('loopButton').disabled = false;
+            document.getElementById('exportButton').disabled = false; // Enable export button
+        }
+
+        function disableControls() {
+            document.getElementById('playButton').disabled = true;
+            document.getElementById('stopButton').disabled = true;
+            document.getElementById('loopButton').disabled = true;
+            document.getElementById('exportButton').disabled = true; // Disable export button
+            document.getElementById('playIcon').classList.remove('hidden');
+            document.getElementById('pauseIcon').classList.add('hidden');
+        }
+
+
+        // --- Playback Controls ---
+        
+        function togglePlay() {
+            if (!audioBuffer) {
+                showMessageBox('No Audio Loaded', 'Please load an audio file first.');
+                return;
+            }
+
+            if (isPlaying) {
+                pausePlayback();
+            } else {
+                startPlayback();
+            }
+        }
+        
+        // Helper function to calculate the effective playback rate
+        function getEffectivePlaybackRate(currentSpeed) {
+            let rate = currentSpeed;
+            if (is432HzMode) {
+                // Apply the pitch shift ratio
+                rate *= PITCH_SHIFT_RATIO;
+            }
+            return rate;
+        }
+
+        function startPlayback() {
+            if (!audioBuffer) return;
+            
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            
+            // Kill any old source node first
+            if (sourceNode) {
+                try { sourceNode.stop(0); } catch(e) {/* already stopped */}
+                sourceNode.disconnect();
+            }
+
+            sourceNode = audioContext.createBufferSource();
+            sourceNode.buffer = audioBuffer;
+
+            // Set loop property based on state
+            sourceNode.loop = isLooping;
+
+            // Get current speed and calculate effective rate
+            const currentSpeed = parseFloat(document.getElementById('speedKnob').getAttribute('data-current-value'));
+            const effectiveRate = getEffectivePlaybackRate(currentSpeed);
+            sourceNode.playbackRate.value = effectiveRate;
+
+            // Connect the source: 
+            sourceNode.connect(dryGainNode);
+            sourceNode.connect(convolverNode);
+            
+            // If the calculated offset is greater than the audio duration, reset
+            const duration = audioBuffer.duration / effectiveRate;
+            if (startOffset >= duration) {
+                startOffset = 0;
+            }
+            
+            startTime = audioContext.currentTime;
+            
+            sourceNode.start(0, startOffset);
+            sourceNode.onended = () => {
+                // Only stop if the node is not looping (otherwise it restarts itself)
+                if (isPlaying && !isLooping) {
+                    stopPlayback(); 
+                    document.getElementById('statusText').textContent = 'Playback finished. Ready to restart.';
+                }
+            };
+
+            isPlaying = true;
+            
+            // Build Status Text
+            let statusText = `Playing... (Speed: ${currentSpeed.toFixed(2)}x`;
+            if (is432HzMode) {
+                statusText += ' / 432Hz Mode';
+            }
+            statusText += ')';
+            if (isLooping) {
+                 statusText += ' [LOOP]';
+            }
+            document.getElementById('statusText').textContent = statusText;
+            document.getElementById('playIcon').classList.add('hidden');
+            document.getElementById('pauseIcon').classList.remove('hidden');
+        }
+
+        function pausePlayback() {
+            if (sourceNode) {
+                try {
+                    sourceNode.stop(0);
+                } catch(e) {
+                    // Node already stopped, ignore
+                }
+                
+                // Calculate the new offset based on current effective speed
+                const currentSpeed = parseFloat(document.getElementById('speedKnob').getAttribute('data-current-value'));
+                const effectiveRate = getEffectivePlaybackRate(currentSpeed);
+                const elapsed = audioContext.currentTime - startTime;
+                startOffset += elapsed * effectiveRate;
+            }
+            
+            isPlaying = false;
+            document.getElementById('statusText').textContent = 'Paused. (Offset: ' + startOffset.toFixed(2) + 's)';
+            document.getElementById('playIcon').classList.remove('hidden');
+            document.getElementById('pauseIcon').classList.add('hidden');
+        }
+        
+        function stopPlayback() {
+            if (sourceNode) {
+                try {
+                    sourceNode.stop(0);
+                } catch(e) {
+                    // Node already stopped, ignore
+                }
+            }
+            isPlaying = false;
+            startTime = 0;
+            startOffset = 0;
+            document.getElementById('statusText').textContent = audioBuffer ? 'Audio loaded and ready.' : 'Ready to load audio.';
+            document.getElementById('playIcon').classList.remove('hidden');
+            document.getElementById('pauseIcon').classList.add('hidden');
+        }
+
+        // --- Loop Control Toggle ---
+        function toggleLoop() {
+            isLooping = !isLooping;
+            const button = document.getElementById('loopButton');
+            
+            if (isLooping) {
+                button.classList.add('loop-active');
+            } else {
+                button.classList.remove('loop-active');
+            }
+            
+            // If currently playing, we must restart the source node to apply the loop change
+            if (isPlaying) {
+                pausePlayback();
+                startPlayback();
+            }
+        }
+
+
+        // --- Effect Control Functions ---
+
+        function setSpeed(rate, knobElement) {
+            const clampedRate = Math.min(MAX_SPEED, Math.max(MIN_SPEED, rate));
+            
+            knobElement.setAttribute('data-current-value', clampedRate);
+            document.getElementById('speedValue').textContent = clampedRate.toFixed(2) + 'x';
+
+            // Restart the node to apply the speed change, regardless of looping status.
+            if (isPlaying) {
+                pausePlayback(); 
+                startPlayback();
+            }
+        }
+
+        function setReverbWetness(wetMix, knobElement) {
+            const clampedMix = Math.min(1.0, Math.max(0.0, wetMix)); 
+            
+            knobElement.setAttribute('data-current-value', clampedMix);
+            
+            if (dryGainNode && wetGainNode && audioContext) {
+                const now = audioContext.currentTime;
+                const rampTime = 0.05; // 50ms smooth ramp
+                
+                // Use linearRamp for smooth, click-free transitions
+                dryGainNode.gain.cancelScheduledValues(now);
+                dryGainNode.gain.linearRampToValueAtTime(1.0 - clampedMix, now + rampTime);
+                
+                wetGainNode.gain.cancelScheduledValues(now);
+                wetGainNode.gain.linearRampToValueAtTime(clampedMix, now + rampTime);
+            }
+            
+            // Check if reverb is enabled before displaying percentage
+            const reverbToggle = document.getElementById('reverbToggle');
+            const isReverbOn = reverbToggle.checked;
+            const reverbIndicator = document.getElementById('reverbIndicator');
+            if (!isReverbOn) {
+                // If reverb is off, turn it back on and update UI
+                reverbToggle.checked = true;
+                reverbIndicator.style.boxShadow = '0 0 15px rgba(93, 128, 229, 0.8)';
+            }
+            document.getElementById('reverbValue').textContent = Math.round(clampedMix * 100) + '%';
+        }
+        
+        function setGain(level, knobElement) {
+            // `level` is interpreted as dB value (e.g., -6 to +6). Convert to linear for audio gain.
+            const minDb = parseFloat(knobElement.getAttribute('data-min-value'));
+            const maxDb = parseFloat(knobElement.getAttribute('data-max-value'));
+            const clampedDb = Math.min(maxDb, Math.max(minDb, level));
+
+            knobElement.setAttribute('data-current-value', clampedDb);
+
+            const linearGain = Math.pow(10, clampedDb / 20);
+            if (masterGainNode && audioContext) {
+                // Use linear ramp to prevent clicks/zipper noise on rapid changes
+                masterGainNode.gain.cancelScheduledValues(audioContext.currentTime);
+                masterGainNode.gain.linearRampToValueAtTime(linearGain, audioContext.currentTime + 0.05); // 50ms ramp
+            }
+
+            // Display the dB value with one decimal place. Prepend '+' for positive values.
+            const sign = clampedDb > 0 ? '+' : '';
+            document.getElementById('gainValue').textContent = sign + clampedDb.toFixed(1) + 'dB';
+        }
+
+        function toggleReverb() {
+            initAudioContext();
+            const isReverbOn = document.getElementById('reverbToggle').checked;
+            const reverbKnob = document.getElementById('reverbKnob');
+            const currentWetness = parseFloat(reverbKnob.getAttribute('data-current-value'));
+            const now = audioContext.currentTime;
+            const rampTime = 0.05;
+
+            if (isReverbOn) {
+                // Reverb ON: Set the mix to the current knob position using a ramp
+                setReverbWetness(currentWetness, reverbKnob);
+                document.getElementById('reverbIndicator').style.boxShadow = '0 0 15px rgba(93, 128, 229, 0.8)';
+            } else {
+                // Reverb OFF: Set wet gain to 0 and dry gain to 1.0 using a ramp
+                if (dryGainNode && wetGainNode) {
+                    wetGainNode.gain.cancelScheduledValues(now);
+                    wetGainNode.gain.linearRampToValueAtTime(0.0, now + rampTime);
+                    
+                    dryGainNode.gain.cancelScheduledValues(now);
+                    dryGainNode.gain.linearRampToValueAtTime(1.0, now + rampTime);
+                }
+                document.getElementById('reverbValue').textContent = 'OFF'; 
+                document.getElementById('reverbIndicator').style.boxShadow = 'none';
+            }
+        }
+        
+        // 432Hz Mode Toggle
+        function toggle432Hz() {
+            initAudioContext();
+            is432HzMode = !is432HzMode;
+            const button = document.getElementById('hz432Button');
+            const statusText = document.getElementById('hz432Status');
+            
+            if (is432HzMode) {
+                button.classList.add('active');
+                statusText.textContent = '432Hz Active'; // Text when active
+                statusText.classList.remove('text-gray-400');
+                statusText.classList.add('text-red-400');
+            } else {
+                button.classList.remove('active');
+                statusText.textContent = '432Hz'; // Text when inactive
+                statusText.classList.remove('text-red-400');
+                statusText.classList.add('text-gray-400');
+            }
+            
+            // Re-start playback immediately to apply the new rate if playing
+            if (isPlaying) {
+                pausePlayback();
+                startPlayback();
+            }
+        }
+
+        // --- Perfection Knob (Off / Slow / Fast) ---
+        let perfectionState = 'off'; // 'off' | 'slow' | 'fast'
+        let _savedPerfectionSettings = null;
+
+        function cyclePerfection() {
+            // Cycle order: off -> slow -> fast -> off ...
+            const order = ['off', 'slow', 'fast'];
+            const idx = order.indexOf(perfectionState);
+            const next = order[(idx + 1) % order.length];
+            applyPerfection(next);
+        }
+
+        function applyPerfection(state) {
+            const perfBtn = document.getElementById('perfectionButton');
+            const perfLight = document.getElementById('perfectionLight');
+            const perfText = document.getElementById('perfectionStatus');
+
+            const speedKnob = document.getElementById('speedKnob');
+            const reverbKnob = document.getElementById('reverbKnob');
+            const gainKnob = document.getElementById('gainKnob');
+            const reverbToggle = document.getElementById('reverbToggle');
+
+            // Helper to save current user settings (only once per activation)
+            function saveCurrent() {
+                if (_savedPerfectionSettings) return;
+                _savedPerfectionSettings = {
+                    speed: parseFloat(speedKnob.getAttribute('data-current-value')) || 1.0,
+                    wetness: parseFloat(reverbKnob.getAttribute('data-current-value')) || INITIAL_WETNESS,
+                    gain: parseFloat(gainKnob.getAttribute('data-current-value')) || INITIAL_GAIN,
+                    reverbOn: reverbToggle.checked,
+                    is432Hz: is432HzMode
+                };
+            }
+
+            // Helper to restore saved settings
+            function restoreSaved() {
+                if (!_savedPerfectionSettings) return;
+                const s = _savedPerfectionSettings;
+                // Restore 432Hz state
+                if (is432HzMode !== s.is432Hz) {
+                    toggle432Hz();
+                }
+                // Restore knobs
+                // Compute normalized position for speed from value
+                let restoredN;
+                if (s.speed <= SPEED_CENTER) {
+                    const V_DecelR = (s.speed - MIN_SPEED) / SLOWDOWN_RANGE;
+                    restoredN = (1 - Math.pow(1 - V_DecelR, 2)) * 0.5;
+                } else {
+                    const V_AccelR = (s.speed - SPEED_CENTER) / SPEEDUP_RANGE;
+                    restoredN = 0.5 + Math.pow(V_AccelR, 2) * 0.5;
+                }
+                updateKnobVisualAndValue(speedKnob, restoredN, s.speed);
+                updateKnobVisualAndValue(reverbKnob, reverbKnob.getAttribute('data-normalized-position') || 0.5, s.wetness);
+                updateKnobVisualAndValue(gainKnob, gainKnob.getAttribute('data-normalized-position') || 0.5, s.gain);
+                // Restore reverb toggle state
+                if (reverbToggle.checked !== s.reverbOn) {
+                    reverbToggle.checked = s.reverbOn;
+                    toggleReverb();
+                }
+                _savedPerfectionSettings = null;
+            }
+
+            if (state === 'off') {
+                // Restore previous settings
+                restoreSaved();
+                perfectionState = 'off';
+                perfBtn.classList.remove('active');
+                perfLight.style.backgroundColor = '#550000'; // off dark red
+                perfLight.style.boxShadow = 'inset 0 0 5px rgba(0,0,0,0.9)';
+                perfText.textContent = 'Perfection: OFF';
+                return;
+            }
+
+            // For slow/fast: save current state if not already saved
+            saveCurrent();
+
+            // Ensure 432Hz is ON
+            if (!is432HzMode) toggle432Hz();
+
+            if (state === 'slow') {
+                // Apply Slow Perfection
+                const targetSpeed = 0.91;
+                const targetWet = 0.36;
+                const targetGain = 0.6; // +0.6 dB
+
+                // Update UI/values
+                // Map targetSpeed to normalized position for the non-linear speed knob
+                let newN;
+                if (targetSpeed <= SPEED_CENTER) {
+                    const V_Decel = (targetSpeed - MIN_SPEED) / SLOWDOWN_RANGE;
+                    newN = (1 - Math.pow(1 - V_Decel, 2)) * 0.5;
+                } else {
+                    const V_Accel = (targetSpeed - SPEED_CENTER) / SPEEDUP_RANGE;
+                    newN = 0.5 + Math.pow(V_Accel, 2) * 0.5;
+                }
+                updateKnobVisualAndValue(speedKnob, newN, targetSpeed);
+                updateKnobVisualAndValue(reverbKnob, (targetWet - parseFloat(reverbKnob.getAttribute('data-min-value'))) / (parseFloat(reverbKnob.getAttribute('data-max-value')) - parseFloat(reverbKnob.getAttribute('data-min-value'))), targetWet);
+                updateKnobVisualAndValue(gainKnob, (targetGain - parseFloat(gainKnob.getAttribute('data-min-value'))) / (parseFloat(gainKnob.getAttribute('data-max-value')) - parseFloat(gainKnob.getAttribute('data-min-value'))), targetGain);
+
+                // Ensure reverb UI is ON
+                if (!reverbToggle.checked) {
+                    reverbToggle.checked = true;
+                    toggleReverb();
+                }
+
+                perfectionState = 'slow';
+                perfBtn.classList.add('active');
+                perfLight.style.backgroundColor = '#ffcc00';
+                perfLight.style.boxShadow = '0 0 15px rgba(255,204,0,0.8), inset 0 0 10px #ff7777';
+                perfText.textContent = 'Perfection: SLOW';
+                return;
+            }
+
+            if (state === 'fast') {
+                // Apply Fast Perfection
+                const targetSpeed = 1.16;
+                const targetWet = 0.36;
+                const targetGain = -1.5; // -1.5 dB
+
+                // Map targetSpeed to normalized position for the non-linear speed knob
+                let newN2;
+                if (targetSpeed <= SPEED_CENTER) {
+                    const V_Decel2 = (targetSpeed - MIN_SPEED) / SLOWDOWN_RANGE;
+                    newN2 = (1 - Math.pow(1 - V_Decel2, 2)) * 0.5;
+                } else {
+                    const V_Accel2 = (targetSpeed - SPEED_CENTER) / SPEEDUP_RANGE;
+                    newN2 = 0.5 + Math.pow(V_Accel2, 2) * 0.5;
+                }
+                updateKnobVisualAndValue(speedKnob, newN2, targetSpeed);
+                updateKnobVisualAndValue(reverbKnob, (targetWet - parseFloat(reverbKnob.getAttribute('data-min-value'))) / (parseFloat(reverbKnob.getAttribute('data-max-value')) - parseFloat(reverbKnob.getAttribute('data-min-value'))), targetWet);
+                updateKnobVisualAndValue(gainKnob, (targetGain - parseFloat(gainKnob.getAttribute('data-min-value'))) / (parseFloat(gainKnob.getAttribute('data-max-value')) - parseFloat(gainKnob.getAttribute('data-min-value'))), targetGain);
+
+                if (!reverbToggle.checked) {
+                    reverbToggle.checked = true;
+                    toggleReverb();
+                }
+
+                perfectionState = 'fast';
+                perfBtn.classList.add('active');
+                perfLight.style.backgroundColor = '#10b981';
+                perfLight.style.boxShadow = '0 0 15px rgba(16,185,129,0.8)';
+                perfText.textContent = 'Perfection: FAST';
+                return;
+            }
+        }
+
+
+        /**
+         * Resets the value of a knob element to its initial value.
+         * @param {HTMLElement} knobElement - The knob element to reset.
+         */
+        function resetKnobValue(knobElement) {
+            const initialValue = parseFloat(knobElement.getAttribute('data-initial-value'));
+            const min = parseFloat(knobElement.getAttribute('data-min-value'));
+            const max = parseFloat(knobElement.getAttribute('data-max-value'));
+            const range = max - min;
+            
+            let initialNormalizedPosition;
+
+            if (knobElement.id === 'speedKnob') {
+                 // For the speed knob, 1.0x is always the middle position (0.5 normalized)
+                 initialNormalizedPosition = 0.5;
+            } else {
+                 // For linear knobs, calculate the normalized position based on value
+                 initialNormalizedPosition = (initialValue - min) / range;
+            }
+            
+            // Update the normalized position attribute
+            knobElement.setAttribute('data-normalized-position', initialNormalizedPosition);
+            
+            // Now update the knob visual and actual value
+            updateKnobVisualAndValue(knobElement, initialNormalizedPosition, initialValue);
+        }
+
+
+        /**
+         * Updates the knob's rotation, indicator arc, and calls the appropriate setter function.
+         * @param {HTMLElement} knobElement - The knob element.
+         * @param {number} normalizedPosition - The linear position (0.0 to 1.0) along the arc.
+         * @param {number} finalValue - The actual, possibly non-linear, value to set.
+         */
+        function updateKnobVisualAndValue(knobElement, normalizedPosition, finalValue) {
+            
+            // 1. Clamp normalized position
+            const N = Math.min(1.0, Math.max(0.0, normalizedPosition));
+            
+            // 2. Calculate Angle (Linear Mapping for Visual Feel)
+            const newAngle = START_ANGLE + N * MAX_ANGLE_RANGE;
+
+            // Apply the angle to the knob body
+            knobElement.style.transform = `rotate(${newAngle}deg)`;
+
+            // 3. Call Setter Function & Update HTML Value Display
+            if (knobElement.id === 'speedKnob') {
+                setSpeed(finalValue, knobElement);
+            } else if (knobElement.id === 'reverbKnob') {
+                setReverbWetness(finalValue, knobElement);
+            } else if (knobElement.id === 'gainKnob') {
+                setGain(finalValue, knobElement);
+            }
+
+            // 4. Update Dynamic Indicator Arc
+            const indicator = knobElement.parentElement.querySelector('.knob-indicator');
+            let indicatorGradientVar;
+            let shadowColor;
+            
+            if (knobElement.id === 'speedKnob') {
+                indicatorGradientVar = '--knob-arc-gradient';
+                shadowColor = `rgba(255, 204, 0, ${N * 0.5 + 0.1})`;
+            } else if (knobElement.id === 'reverbKnob') {
+                indicatorGradientVar = '--knob-arc-gradient';
+                shadowColor = `rgba(93, 128, 229, ${N * 0.6})`;
+            } else if (knobElement.id === 'gainKnob') {
+                indicatorGradientVar = '--knob-arc-gradient';
+                shadowColor = `rgba(16, 185, 129, ${N * 0.6})`;
+            }
+            
+            // The fill percentage in degrees (0 to 306)
+            const fillDegrees = N * MAX_ANGLE_RANGE; 
+            
+            // Create the conic gradient: 
+            const conicGradientCSS = `
+                conic-gradient(
+                    from ${START_ANGLE}deg at 50% 50%,
+                    var(${indicatorGradientVar}) 0deg ${fillDegrees}deg,
+                    transparent ${fillDegrees}deg 306deg
+                )
+            `;
+            
+            indicator.style.background = conicGradientCSS;
+            indicator.style.boxShadow = `0 0 15px ${shadowColor}`;
+        }
+        
+        // --- Knob Interaction Logic ---
+        
+        let activeKnob = null;
+        let isDragging = false;
+        let startY = 0;
+
+        function handleDragStart(event) {
+            initAudioContext();
+            event.preventDefault();
+            isDragging = true;
+            startY = event.clientY || (event.touches ? event.touches[0].clientY : 0);
+            activeKnob = this;
+            activeKnob.style.cursor = 'grabbing';
+            if (audioContext && audioContext.state === 'suspended') {
+                 audioContext.resume();
+            }
+        }
+        
+        function handleDragMove(event) {
+            if (!isDragging || !activeKnob) return;
+
+            event.preventDefault(); 
+            
+            const clientY = event.clientY || (event.touches ? event.touches[0].clientY : 0);
+            const deltaY = startY - clientY; // Dragging up increases value/position
+            startY = clientY;
+
+            let currentN = parseFloat(activeKnob.getAttribute('data-normalized-position'));
+
+            // Standard sensitivity: 200 pixels for a full sweep (0 to 1 normalized range)
+            const sensitivity = 1 / 200; 
+
+            // Calculate new normalized position linearly based on drag
+            let newN = currentN + deltaY * sensitivity;
+            newN = Math.min(1.0, Math.max(0.0, newN));
+
+            // Update normalized position attribute
+            activeKnob.setAttribute('data-normalized-position', newN);
+
+            let finalValue;
+            if (activeKnob.id === 'speedKnob') {
+                // Use the INVERSE non-linear map to get the actual rate from the linear physical position (newN)
+                finalValue = getSpeedValueFromNormalizedPosition(newN);
+            } else {
+                // Linear mapping for Reverb and Gain
+                const min = parseFloat(activeKnob.getAttribute('data-min-value'));
+                const max = parseFloat(activeKnob.getAttribute('data-max-value'));
+                const range = max - min;
+                finalValue = min + newN * range;
+            }
+            
+            // Update the knob visual (based on newN) and set the value (based on finalValue)
+            updateKnobVisualAndValue(activeKnob, newN, finalValue);
+        }
+
+        function handleDragEnd() {
+            if (isDragging && activeKnob) {
+                isDragging = false;
+                activeKnob.style.cursor = 'grab';
+                activeKnob = null;
+            }
+        }
+        
+        // --- Touch/Double-Click Reset Logic ---
+        
+        let lastClickTime = 0;
+        const doubleClickThreshold = 300; // ms
+
+        /**
+         * Handles double-click event (and double-tap simulation for touch)
+         */
+        function handleKnobClick(event) {
+            // Get the knob element, which is 'this' (the knob-body div)
+            const knobElement = this; 
+            
+            const currentTime = new Date().getTime();
+            const timeDiff = currentTime - lastClickTime;
+
+            if (timeDiff < doubleClickThreshold && timeDiff > 0) {
+                // Double-click/tap detected: reset value
+                resetKnobValue(knobElement);
+                event.preventDefault(); // Prevent text selection on desktop double-click
+                lastClickTime = 0; // Reset timer
+            } else {
+                // Single click/tap: set timer for double click
+                lastClickTime = currentTime;
+            }
+        }
+
+        // --- Manual Input Logic ---
+        
+        /**
+         * Initiates manual editing mode for a value span.
+         * @param {HTMLElement} valueSpan - The span element to make editable.
+         */
+        function handleValueEditStart(valueSpan) {
+            // Check if already editing
+            if (valueSpan.getAttribute('contenteditable') === 'true') return;
+            
+            // Store the current display text (e.g., "1.00x")
+            const originalText = valueSpan.textContent.trim();
+            valueSpan.setAttribute('data-original-text', originalText);
+            
+            // Extract the first numeric token, keeping a leading '-' only when it's part of the number
+            // This prevents stray '-' characters elsewhere in the string from appearing.
+            const match = originalText.match(/-?\d+(?:\.\d+)?/);
+            let numberToEdit = match ? match[0] : '';
+
+            // Special handling for gain which shows '-inf'
+            if (numberToEdit === '-') {
+                numberToEdit = -numberToEdit;
+            } else if (valueSpan.dataset.type === 'percent') {
+                // For percentage, just show the integer percentage value (e.g., 50 instead of 50%)
+                numberToEdit = Math.round(parseFloat(numberToEdit));
+            } else {
+                 // Ensure it is float with at least one decimal place for visual consistency
+                 numberToEdit = parseFloat(numberToEdit).toFixed(2);
+            }
+            
+            // Set content to the editable number
+            valueSpan.textContent = numberToEdit;
+
+            // Enable editing
+            valueSpan.setAttribute('contenteditable', 'true');
+            valueSpan.focus();
+            
+            // Select all text in the editable span
+            document.execCommand('selectAll', false, null);
+
+            // Add listeners for exiting edit mode
+            valueSpan.addEventListener('blur', handleValueEditEnd);
+            valueSpan.addEventListener('keydown', handleKeydown);
+        }
+
+        /**
+         * Handles keydown events in editable spans (specifically for 'Enter' and filtering non-numbers).
+         * @param {KeyboardEvent} event - The keyboard event.
+         */
+        function handleKeydown(event) {
+            // 1. Enforce numerical input (Allow numbers, decimal point, minus sign, and control keys)
+            const isControlKey = event.key.length > 1; // e.g., 'Enter', 'Tab', 'ArrowLeft'
+            const isNumber = /^\d$/.test(event.key);
+            const isDecimal = event.key === '.';
+            const isMinus = event.key === '-';
+            
+            if (!isControlKey && !isNumber && !isDecimal && !isMinus) {
+                event.preventDefault();
+                return;
+            }
+            
+            // 2. Catch 'Enter' key to finalize input
+            if (event.key === 'Enter') {
+                event.preventDefault(); // Prevent new line
+                handleValueEditEnd.call(this); // Call the blur handler directly
+            }
+        }
+
+        /**
+         * Finalizes manual editing, validates, clamps, and updates the knob.
+         * @param {FocusEvent} [event] - The blur event (optional).
+         */
+        function handleValueEditEnd() {
+            const valueSpan = this;
+            
+            // Check if we are actually exiting edit mode
+            if (valueSpan.getAttribute('contenteditable') !== 'true') return;
+            
+            valueSpan.setAttribute('contenteditable', 'false');
+            valueSpan.removeEventListener('blur', handleValueEditEnd);
+            valueSpan.removeEventListener('keydown', handleKeydown);
+
+            const knobElement = document.getElementById(valueSpan.dataset.knobId);
+            if (!knobElement) return;
+
+            const min = parseFloat(knobElement.getAttribute('data-min-value'));
+            const max = parseFloat(knobElement.getAttribute('data-max-value'));
+            const range = max - min;
+            const dataType = valueSpan.dataset.type;
+
+            // Get the cleaned-up value from the span
+            const rawValue = valueSpan.textContent.trim();
+            let parsedValue = parseFloat(rawValue);
+
+            if (isNaN(parsedValue)) {
+                // If input is invalid (e.g., just a letter), revert to the original value
+                showMessageBox('Invalid Input', 'Input must be a valid number. Value reverted.');
+                // Revert to the knob's actual current value (data-current-value) and re-render
+                const currentValue = parseFloat(knobElement.getAttribute('data-current-value'));
+                const currentN = knobElement.id === 'speedKnob' ? 
+                                    (currentValue <= SPEED_CENTER ? (1 - Math.sqrt(1 - (currentValue - MIN_SPEED) / SLOWDOWN_RANGE)) * 0.5 : 
+                                    0.5 + Math.pow((currentValue - SPEED_CENTER) / SPEEDUP_RANGE, 2) * 0.5) : 
+                                    (currentValue - min) / range;
+                updateKnobVisualAndValue(knobElement, currentN, currentValue);
+                return;
+            }
+
+            // --- Apply Type Specific Conversions ---
+            if (dataType === 'percent') {
+                // User entered 0-100, convert to 0-1 range
+                parsedValue /= 100;
+            } 
+            
+            // --- Clamping and Updating ---
+            
+            const clampedValue = Math.min(max, Math.max(min, parsedValue));
+            
+            // 1. Calculate the corresponding Normalized Position (N) for the clamped value
+            let normalizedPosition;
+            if (knobElement.id === 'speedKnob') {
+                // Since the user is setting the VALUE directly, we need to map the VALUE back to the 
+                // correct, non-linear normalized position (N) to update the visual.
+                if (clampedValue <= SPEED_CENTER) {
+                    const V_Decel = (clampedValue - MIN_SPEED) / SLOWDOWN_RANGE; // 0 to 1
+                    normalizedPosition = (1 - Math.pow(1 - V_Decel, 2)) * 0.5; // N = N_Half * 0.5
+                } else {
+                    const V_Accel = (clampedValue - SPEED_CENTER) / SPEEDUP_RANGE; // 0 to 1
+                    normalizedPosition = 0.5 + Math.pow(V_Accel, 2) * 0.5; // N = 0.5 + N_Half * 0.5
+                }
+            } else {
+                // Linear map for Gain/Reverb
+                normalizedPosition = (clampedValue - min) / range;
+            }
+            
+            if (clampedValue !== parsedValue) {
+                // If clamping occurred, notify the user.
+                const rangeText = dataType === 'percent' ? `0% to 100%` : `${min.toFixed(2)} to ${max.toFixed(2)}`;
+                showMessageBox('Value Clamped', `The entered value (${rawValue}) was outside the allowed range and has been clamped to ${clampedValue.toFixed(2)} (${rangeText}).`);
+            }
+            
+            // 2. Update the knob visual (based on N) and set the value (based on clampedValue)
+            knobElement.setAttribute('data-normalized-position', normalizedPosition);
+            updateKnobVisualAndValue(knobElement, normalizedPosition, clampedValue);
+        }
+        
+        // --- Export Logic ---
+        
+        /**
+         * Converts an AudioBuffer into a downloadable WAV Blob.
+         * @param {AudioBuffer} ab - The AudioBuffer to convert.
+         * @returns {Blob} The WAV file as a Blob.
+         */
+        function bufferToWave(ab) {
+            const numChannels = ab.numberOfChannels;
+            const sampleRate = ab.sampleRate;
+            const bufferLength = ab.length * numChannels * 2; // 2 bytes per sample (16-bit)
+            const totalLength = 44 + bufferLength;
+            
+            const buffer = new ArrayBuffer(totalLength);
+            const view = new DataView(buffer);
+            
+            // Helper function to write a string to the DataView at a specific offset
+            function writeString(view, offset, string) {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            }
+
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF'); // Chunk ID
+            view.setUint32(4, totalLength - 8, true); // Chunk size
+            writeString(view, 8, 'WAVE'); // Format
+
+            // FMT sub-chunk
+            writeString(view, 12, 'fmt '); // Sub-chunk 1 ID
+            view.setUint32(16, 16, true); // Sub-chunk 1 size (16 for PCM)
+            view.setUint16(20, 1, true); // Audio format (1 for PCM)
+            view.setUint16(22, numChannels, true); // Number of channels
+            view.setUint32(24, sampleRate, true); // Sample rate
+            view.setUint32(28, sampleRate * numChannels * 2, true); // Byte rate
+            view.setUint16(32, numChannels * 2, true); // Block align (channels * 2 bytes)
+            view.setUint16(34, 16, true); // Bits per sample
+
+            // Data sub-chunk
+            writeString(view, 36, 'data'); // Sub-chunk 2 ID
+            view.setUint32(40, bufferLength, true); // Sub-chunk 2 size
+
+            // Write the actual audio data
+            let offset = 44;
+            for (let i = 0; i < ab.length; i++) {
+                for (let channel = 0; channel < numChannels; channel++) {
+                    // Get sample, convert to 16-bit signed integer, and write
+                    let sample = ab.getChannelData(channel)[i];
+                    sample = Math.max(-1, Math.min(1, sample)); // Clamp to [-1, 1]
+                    sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                    view.setInt16(offset, sample, true); // Write 16-bit sample (little-endian)
+                    offset += 2;
+                }
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        /**
+         * Offline renders the current AudioBuffer with all effects applied and triggers a WAV download.
+         */
+        async function exportAudio() {
+            if (!audioBuffer) {
+                showMessageBox('No Audio', 'Please load an audio file before exporting.');
+                return;
+            }
+            
+            if (isPlaying) {
+                showMessageBox('Playback Active', 'Please stop or pause playback before starting the export process.');
+                return;
+            }
+
+            const exportButton = document.getElementById('exportButton');
+            const statusTextElement = document.getElementById('statusText');
+            
+            // 1. Disable button and update status
+            exportButton.disabled = true;
+            statusTextElement.textContent = 'Rendering audio effects... Please wait.';
+
+            try {
+                // Get current effect parameters
+                const currentSpeed = parseFloat(document.getElementById('speedKnob').getAttribute('data-current-value'));
+                const currentWetness = parseFloat(document.getElementById('reverbKnob').getAttribute('data-current-value'));
+                const currentGain = parseFloat(document.getElementById('gainKnob').getAttribute('data-current-value'));
+                const isReverbOn = document.getElementById('reverbToggle').checked;
+                
+                // Calculate rendering duration (Source duration / PlaybackRate) + reverb tail based on impulse response
+                const effectiveRate = getEffectivePlaybackRate(currentSpeed);
+                const playbackDuration = audioBuffer.duration / effectiveRate;
+                const sampleRate = audioBuffer.sampleRate;
+                let reverbTailSeconds = 0;
+                if (convolverNode && convolverNode.buffer) {
+                    // Use the longest channel in the impulse response as the reverb tail
+                    reverbTailSeconds = convolverNode.buffer.duration;
+                } else {
+                    // Fallback: 3 seconds if no IR loaded (matches default IR duration)
+                    reverbTailSeconds = 3;
+                }
+                const renderLength = Math.ceil((playbackDuration + reverbTailSeconds) * sampleRate);
+
+                // 2. Setup Offline Context
+                const offlineContext = new OfflineAudioContext(
+                    audioBuffer.numberOfChannels, 
+                    renderLength, 
+                    sampleRate
+                );
+                
+                // 3. Re-create the Audio Graph in the offline context
+                const offlineSource = offlineContext.createBufferSource();
+                offlineSource.buffer = audioBuffer;
+                offlineSource.playbackRate.value = effectiveRate;
+
+                // Reverb components (re-use the existing impulse response buffer)
+                const offlineConvolver = offlineContext.createConvolver();
+                if (convolverNode && convolverNode.buffer) {
+                    offlineConvolver.buffer = convolverNode.buffer; 
+                } else {
+                    // Fallback or error handling for missing impulse response (shouldn't happen if initAudioContext ran)
+                    offlineConvolver.buffer = offlineContext.createBuffer(2, 1, sampleRate); 
+                }
+                
+                const offlineWetGain = offlineContext.createGain();
+                const offlineDryGain = offlineContext.createGain();
+                const offlineMasterGain = offlineContext.createGain(); // Final summing and volume control
+                
+                // 4. Apply current parameters to offline gains
+                offlineDryGain.gain.value = 1.0 - (isReverbOn ? currentWetness : 0);
+                offlineWetGain.gain.value = isReverbOn ? currentWetness : 0;
+                // `currentGain` is stored as dB; convert to linear for offline gain node
+                offlineMasterGain.gain.value = Math.pow(10, currentGain / 20);
+
+                // 5. Connect the offline graph
+                offlineSource.connect(offlineDryGain);
+                offlineSource.connect(offlineConvolver);
+                
+                offlineDryGain.connect(offlineMasterGain);
+                
+                offlineConvolver.connect(offlineWetGain);
+                offlineWetGain.connect(offlineMasterGain);
+                
+                offlineMasterGain.connect(offlineContext.destination);
+
+                // 6. Start Rendering
+                offlineSource.start(0);
+                const renderedBuffer = await offlineContext.startRendering();
+                
+                // 7. Convert to WAV Blob
+                statusTextElement.textContent = 'Converting to WAV format...';
+                const wavBlob = bufferToWave(renderedBuffer);
+
+                // 8. Trigger Download
+                const url = URL.createObjectURL(wavBlob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+
+                // Generate filename by prefixing the original uploaded name with SVERB_SPEED and 432Hz if active.
+                // Use the uploadedFileName (without extension) when available.
+                const originalBase = uploadedFileName ? uploadedFileName.replace(/\.[^/.]+$/, '') : 'untitled';
+                let prefix = `SVERB_SPEED${currentSpeed.toFixed(2)}x`;
+                if (is432HzMode) prefix += '_432Hz';
+                const filename = `${prefix}_${originalBase}.wav`;
+
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                
+                window.URL.revokeObjectURL(url);
+                a.remove();
+
+                statusTextElement.textContent = 'Export complete! File downloaded.';
+
+            } catch (error) {
+                console.error('Audio Export Error:', error);
+                showMessageBox('Export Failed', 'An error occurred during the audio rendering process: ' + error.message);
+                statusTextElement.textContent = 'Export failed.';
+            } finally {
+                // 9. Re-enable button
+                exportButton.disabled = false;
+            }
+        }
+
+        // --- Event Listeners and Initial Setup ---
+
+        function setupKnobListeners(knobId) {
+            const knob = document.getElementById(knobId);
+            if (!knob) return;
+            
+            // Dragging events (Mouse & Touch)
+            knob.addEventListener('mousedown', handleDragStart);
+            knob.addEventListener('touchstart', handleDragStart);
+
+            // Double click/tap for reset
+            knob.addEventListener('click', handleKnobClick);
+
+            // Initialize knob value and angle
+            resetKnobValue(knob);
+        }
+
+        // Global listeners for movement and end events
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('mouseup', handleDragEnd);
+        document.addEventListener('touchmove', handleDragMove, { passive: false });
+        document.addEventListener('touchend', handleDragEnd);
+
+        // Setup all knobs on window load
+        window.onload = function() {
+            setupKnobListeners('speedKnob');
+            setupKnobListeners('reverbKnob');
+            setupKnobListeners('gainKnob');
+            
+            // Set initial reverb value text to match knob's initial setting and state (ON by default)
+            toggleReverb(); 
+        };
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# JUCE / Projucer compilation outputs
+Source/Builds/
+
+# Final built binaries
+Application/
+
+# OS Specific junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE specific user settings
+.vs/
+.vscode/
+*.user
+*.suo
