@@ -32,3 +32,11 @@ When you begin the next sprint, initialize the active AI model (Claude Code or C
 
 **Kick-off Prompt Example:**
 > *"Read `FUTURE_SPEC.md`. We are now transitioning the working audio codebase into this new target architecture. Review our existing `PluginProcessor.cpp` and `PluginEditor.cpp` layout, and give me a step-by-step implementation blueprint to safely integrate the Klipy API network thread without introducing thread safety issues to our real-time processing loop."*
+
+---
+
+## 🔗 Reference API Resources
+Use these official channels to pull endpoint schemas and API implementation logic for the video workflow:
+- **API Documentation:** [Klipy Getting Started Guide](https://docs.klipy.com/getting-started)
+- **API Functional Overview:** [Klipy API Overview & Endpoints](https://klipy.com/api-overview#overview)
+- **Official Open-Source Implementations:** [Klipy GitHub Repository](https://github.com/KLIPY-com/Klipy-GIF-API)

@@ -60,8 +60,8 @@ Compiler Target: Standalone Application
 Required Modules: juce_core, juce_audio_processors, juce_dsp
 
 ## Project Files to Modify
-- `Source/PluginProcessor.h` & `PluginProcessor.cpp` (DSP Engine)
-- `Source/PluginEditor.h` & `PluginEditor.cpp` (Visual Interface)
+- `Source/SVERB/Source/PluginProcessor.h` & `PluginProcessor.cpp` (DSP Engine)
+- `Source/SVERB/Source/PluginEditor.h` & `PluginEditor.cpp` (Visual Interface)
 """
 
 ### Step 2B: The Codex Execution Prompt
@@ -69,7 +69,7 @@ Open the Codex composer bar in your local project workspace and execute this pro
 
 """
 Read `ARCH_SPEC.md` and the `index.html` prototype located in the root directory. 
-Modify the implementation files inside the `Source/` folder directly to fully build out the native C++ application. 
+Modify the implementation files inside the Source/SVERB/Source/ folder directly to fully build out the native C++ application.
 
 Constraints:
 - Implement the speed alteration and one-knob reverb inside the `processBlock` loop using thread-safe parameters.
