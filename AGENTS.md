@@ -7,13 +7,13 @@
 
 ## Directory Layout
 - Master Root: SVERB/
-- Prototype source: Prototypes/index.html
+- Prototype source: Prototypes/SVERB_Audio_FX_Plugin_Prototype.html
 - Specifications: Docs/ARCH_SPEC.md
 - Source code: Source/ (contains the .jucer file and Source/ subfolder with C++ files)
 - Build outputs: Application/
 
 ## Core Execution Tasks
-1. Read Docs/ARCH_SPEC.md and Prototypes/index.html for architectural mapping and DSP/UI behavior.
+1. Read Docs/ARCH_SPEC.md and Prototypes/SVERB_Audio_FX_Plugin_Prototype.html for architectural mapping and DSP/UI behavior.
 2. Implement the playback speed alteration and the one-knob `juce::dsp::Reverb` inside the `processBlock` method in Source/PluginProcessor.cpp.
 3. Expose parameters via `juce::AudioProcessorValueTreeState` (APVTS).
 4. Implement UI controls in Source/PluginEditor.cpp matching the functional requirements of the prototype.

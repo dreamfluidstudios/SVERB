@@ -1,191 +1,293 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "AudioFileLoader.h"
+#include "OfflineExporter.h"
 
-//==============================================================================
-SVERBAudioProcessor::SVERBAudioProcessor()
-#ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
-#endif
+SVERBAudioProcessor::SVERBAudioProcessor ()
+    : AudioProcessor (
+          BusesProperties ().withOutput ("Output", juce::AudioChannelSet::stereo (), true)),
+      apvts (*this, nullptr, "SVERB_STATE", sverb::params::createParameterLayout ()),
+      perfection (apvts)
 {
+    formatManager.registerBasicFormats ();
+    speedParam = apvts.getRawParameterValue (sverb::params::speed);
+    reverbOnParam = apvts.getRawParameterValue (sverb::params::reverbOn);
+    reverbWetParam = apvts.getRawParameterValue (sverb::params::reverbWet);
+    gainParam = apvts.getRawParameterValue (sverb::params::gain);
+    hz432Param = apvts.getRawParameterValue (sverb::params::hz432);
 }
-
-SVERBAudioProcessor::~SVERBAudioProcessor()
+SVERBAudioProcessor::~SVERBAudioProcessor ()
 {
+    shuttingDown.store (true);
+    // Jobs cooperatively cancel between decode/render chunks. Never destroy their owner early.
+    threadPool.removeAllJobs (true, -1);
+    cancelPendingUpdate ();
 }
-
-//==============================================================================
-const juce::String SVERBAudioProcessor::getName() const
+void SVERBAudioProcessor::prepareToPlay (double sr, int maximumBlockSize)
 {
-    return JucePlugin_Name;
+    preparedBlockSize = juce::jmax (1, maximumBlockSize);
+    const juce::dsp::ProcessSpec spec{sr,
+                                      static_cast<juce::uint32> (preparedBlockSize),
+                                      static_cast<juce::uint32> (getTotalNumOutputChannels ())};
+    {
+        const juce::SpinLock::ScopedLockType lock (audioLock);
+        transport.prepare (sr, maximumBlockSize);
+    }
+    reverb.prepare (spec);
+    reverb.setParameters (sverb::reverbParameters ());
+    reverb.reset ();
+    mixer.setMixingRule (juce::dsp::DryWetMixingRule::linear);
+    mixer.setWetMixProportion (reverbOnParam->load () >= 0.5f ? reverbWetParam->load () : 0.0f);
+    mixer.prepare (spec);
+    mixer.reset ();
+    masterGain.prepare (spec);
+    masterGain.setRampDurationSeconds (0.05);
+    masterGain.setGainDecibels (gainParam->load ());
+    masterGain.reset ();
 }
-
-bool SVERBAudioProcessor::acceptsMidi() const
+void SVERBAudioProcessor::releaseResources ()
 {
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
-    return false;
-   #endif
+    reverb.reset ();
+    mixer.reset ();
+    masterGain.reset ();
 }
-
-bool SVERBAudioProcessor::producesMidi() const
+bool SVERBAudioProcessor::isBusesLayoutSupported (const BusesLayout& layout) const
 {
-   #if JucePlugin_ProducesMidiOutput
-    return true;
-   #else
-    return false;
-   #endif
+    return layout.getMainInputChannelSet ().isDisabled () &&
+           (layout.getMainOutputChannelSet () == juce::AudioChannelSet::mono () ||
+            layout.getMainOutputChannelSet () == juce::AudioChannelSet::stereo ());
 }
-
-bool SVERBAudioProcessor::isMidiEffect() const
-{
-   #if JucePlugin_IsMidiEffect
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-double SVERBAudioProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
-int SVERBAudioProcessor::getNumPrograms()
-{
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
-}
-
-int SVERBAudioProcessor::getCurrentProgram()
-{
-    return 0;
-}
-
-void SVERBAudioProcessor::setCurrentProgram (int index)
-{
-}
-
-const juce::String SVERBAudioProcessor::getProgramName (int index)
-{
-    return {};
-}
-
-void SVERBAudioProcessor::changeProgramName (int index, const juce::String& newName)
-{
-}
-
-//==============================================================================
-void SVERBAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
-{
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
-}
-
-void SVERBAudioProcessor::releaseResources()
-{
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
-}
-
-#ifndef JucePlugin_PreferredChannelConfigurations
-bool SVERBAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
-{
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-  #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-
-    // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
-
-    return true;
-  #endif
-}
-#endif
-
-void SVERBAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void SVERBAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
-
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
-
-        // ..do something to the data...
+        const juce::SpinLock::ScopedTryLockType lock (audioLock);
+        if (! lock.isLocked () || ! currentAudio)
+            buffer.clear ();
+        else
+            transport.render (
+                *currentAudio,
+                buffer,
+                buffer.getNumSamples (),
+                sverb::effectiveRate (speedParam->load (), hz432Param->load () >= 0.5f));
+    }
+    mixer.setWetMixProportion (reverbOnParam->load () >= 0.5f ? reverbWetParam->load () : 0.0f);
+    masterGain.setGainDecibels (gainParam->load ());
+    // Hosts can exceed their advertised block size. Slice without allocating or resizing DSP buffers.
+    juce::dsp::AudioBlock<float> entireBlock (buffer);
+    for (int offset = 0; offset < buffer.getNumSamples (); offset += preparedBlockSize)
+    {
+        auto block = entireBlock.getSubBlock (
+            static_cast<size_t> (offset),
+            static_cast<size_t> (juce::jmin (preparedBlockSize, buffer.getNumSamples () - offset)));
+        mixer.pushDrySamples (block);
+        reverb.process (juce::dsp::ProcessContextReplacing<float> (block));
+        mixer.mixWetSamples (block);
+        masterGain.process (juce::dsp::ProcessContextReplacing<float> (block));
     }
 }
-
-//==============================================================================
-bool SVERBAudioProcessor::hasEditor() const
+void SVERBAudioProcessor::loadFileAsync (const juce::File& file)
 {
-    return true; // (change this to false if you choose to not supply an editor)
+    const auto generation = ++loadGeneration;
+    if (file.getSize () > sverb::kMaxUploadBytes)
+    {
+        loading.store (false);
+        reportError ("File Too Large", "Please choose a file smaller than 150 MB.");
+        return;
+    }
+    loading.store (true);
+    pendingStatus = "Decoding audio...";
+    sendChangeMessage ();
+    threadPool.addJob (
+        [this, file, generation]
+        {
+            Completion result;
+            result.isLoad = true;
+            result.generation = generation;
+            try
+            {
+                if (! shuttingDown.load ())
+                    result.audio = sverb::decodeAudio (formatManager, file, shuttingDown);
+            }
+            catch (const std::length_error& e)
+            {
+                result.title = "File Too Large";
+                result.error = e.what ();
+            }
+            catch (const std::exception& e)
+            {
+                result.title = "Audio Error";
+                result.error = e.what ();
+            }
+            postCompletion (std::move (result));
+        });
 }
-
-juce::AudioProcessorEditor* SVERBAudioProcessor::createEditor()
+void SVERBAudioProcessor::postCompletion (Completion result)
+{
+    if (shuttingDown.load ())
+        return;
+    {
+        const juce::ScopedLock lock (completionLock);
+        completions.push_back (std::move (result));
+    }
+    triggerAsyncUpdate ();
+}
+void SVERBAudioProcessor::handleAsyncUpdate ()
+{
+    std::deque<Completion> ready;
+    {
+        const juce::ScopedLock lock (completionLock);
+        ready.swap (completions);
+    }
+    for (auto& result : ready)
+    {
+        if (result.isLoad)
+        {
+            if (result.generation != loadGeneration)
+                continue;
+            loading.store (false);
+            if (result.audio)
+            {
+                transport.requestStop ();
+                {
+                    const juce::SpinLock::ScopedLockType lock (audioLock);
+                    currentAudio.swap (result.audio);
+                    transport.resetPositionUnsafe ();
+                }
+                result.audio
+                    .reset (); // Old allocation released on message thread, outside the spin lock.
+                pendingStatus = "Audio loaded and ready.";
+            }
+            else
+                pendingStatus = hasAudio () ? "Audio loaded and ready." : "Ready to load audio.";
+        }
+        else
+        {
+            exporting.store (false);
+            pendingStatus =
+                result.error.isEmpty () ? "Export complete! File saved." : "Export failed.";
+        }
+        if (result.error.isNotEmpty ())
+            reportError (result.title, result.error);
+    }
+    sendChangeMessage ();
+}
+bool SVERBAudioProcessor::hasAudio () const
+{
+    const juce::SpinLock::ScopedLockType lock (audioLock);
+    return currentAudio != nullptr;
+}
+juce::String SVERBAudioProcessor::getLoadedFileName () const
+{
+    std::shared_ptr<const sverb::LoadedAudio> audio;
+    {
+        const juce::SpinLock::ScopedLockType lock (audioLock);
+        audio = currentAudio;
+    }
+    return audio ? audio->sourceFile.getFileName () : juce::String ();
+}
+SVERBAudioProcessor::ExportRequest SVERBAudioProcessor::makeExportRequest () const
+{
+    ExportRequest request;
+    {
+        const juce::SpinLock::ScopedLockType lock (audioLock);
+        request.audio = currentAudio;
+    }
+    request.values = {speedParam->load (),
+                      reverbWetParam->load (),
+                      gainParam->load (),
+                      reverbOnParam->load () >= 0.5f,
+                      hz432Param->load () >= 0.5f};
+    return request;
+}
+juce::File SVERBAudioProcessor::suggestedExportFile (const ExportRequest& request) const
+{
+    if (! request.audio)
+        return {};
+    auto name = "SVERB_SPEED" + juce::String (request.values.speed, 2) + "x";
+    if (request.values.hz432)
+        name += "_432Hz";
+    name += "_" + request.audio->sourceFile.getFileNameWithoutExtension () + ".wav";
+    return request.audio->sourceFile.getSiblingFile (name);
+}
+void SVERBAudioProcessor::exportAsync (const juce::File& destination, ExportRequest request)
+{
+    if (transport.isPlaying ())
+    {
+        reportError ("Playback Active",
+                     "Please stop or pause playback before starting the export process.");
+        return;
+    }
+    if (! request.audio)
+    {
+        reportError ("No Audio", "Please load an audio file before exporting.");
+        return;
+    }
+    if (destination == request.audio->sourceFile)
+    {
+        reportError ("Export Failed",
+                     "Choose a different filename to preserve the original audio.");
+        return;
+    }
+    if (exporting.exchange (true))
+        return;
+    pendingStatus = "Rendering audio effects... Please wait.";
+    sendChangeMessage ();
+    threadPool.addJob (
+        [this, destination, request = std::move (request)]
+        {
+            Completion result;
+            try
+            {
+                if (! shuttingDown.load ())
+                    sverb::renderWav (*request.audio, request.values, destination, shuttingDown);
+            }
+            catch (const std::exception& e)
+            {
+                result.title = "Export Failed";
+                result.error = "An error occurred during the audio rendering process: " +
+                               juce::String (e.what ());
+            }
+            postCompletion (std::move (result));
+        });
+}
+void SVERBAudioProcessor::reportError (juce::String title, juce::String message)
+{
+    pendingError = std::make_pair (std::move (title), std::move (message));
+    sendChangeMessage ();
+}
+std::optional<std::pair<juce::String, juce::String>> SVERBAudioProcessor::takePendingError ()
+{
+    auto result = std::move (pendingError);
+    pendingError.reset ();
+    return result;
+}
+juce::String SVERBAudioProcessor::takePendingStatus ()
+{
+    auto result = pendingStatus;
+    pendingStatus.clear ();
+    return result;
+}
+void SVERBAudioProcessor::getStateInformation (juce::MemoryBlock& dest)
+{
+    if (auto xml = apvts.copyState ().createXml ())
+        copyXmlToBinary (*xml, dest);
+}
+void SVERBAudioProcessor::setStateInformation (const void* data, int size)
+{
+    if (auto xml = getXmlFromBinary (data, size))
+        if (xml->hasTagName (apvts.state.getType ()))
+        {
+            perfection.beginStateRestore ();
+            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+            perfection.syncAfterStateRestore ();
+        }
+}
+juce::AudioProcessorEditor* SVERBAudioProcessor::createEditor ()
 {
     return new SVERBAudioProcessorEditor (*this);
 }
-
-//==============================================================================
-void SVERBAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter ()
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-}
-
-void SVERBAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
-{
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
-}
-
-//==============================================================================
-// This creates new instances of the plugin..
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new SVERBAudioProcessor();
+    return new SVERBAudioProcessor ();
 }
