@@ -1,16 +1,55 @@
-# JUCE / Projucer compilation outputs
-Source/SVERB/Builds/
+# Keep Projucer-generated solution/project files under Builds in Git.
+# Ignore only build output and intermediate directories.
+/Source/SVERB/Builds/*/x64/
+/Source/SVERB/Builds/*/Win32/
+/Source/SVERB/Builds/*/ARM64/
+/Source/SVERB/Builds/*/Debug/
+/Source/SVERB/Builds/*/Release/
 
-# Final built binaries
-Application/
+# Packaged applications, verification renders, and exported test audio
+/Application/
 
-# OS Specific junk
-.DS_Store
-Thumbs.db
-Desktop.ini
+# Compiler/linker outputs and caches (including accidental outputs elsewhere)
+*.obj
+*.o
+*.pch
+*.gch
+*.pdb
+*.idb
+*.ilk
+*.ipch
+*.tlog
+*.lastbuildstate
+*.res
+*.exp
+*.lib
+*.a
+*.exe
+*.dll
+*.so
+*.dylib
+*.vst3
 
-# IDE specific user settings
+# Local Visual Studio / editor settings
 .vs/
 .vscode/
 *.user
 *.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.db-shm
+*.VC.db-wal
+*.VC.opendb
+
+# Editor temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
